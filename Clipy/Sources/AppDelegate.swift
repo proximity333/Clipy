@@ -128,9 +128,13 @@ class AppDelegate: NSObject, NSMenuItemValidation {
 
     private func toggleAddingToLoginItems(_ isEnable: Bool) {
         let appPath = Bundle.main.bundlePath
-        LoginServiceKit.removeLoginItems(at: appPath)
-        guard isEnable else { return }
-        LoginServiceKit.addLoginItems(at: appPath)
+        if isEnable {
+            guard !LoginServiceKit.isExistLoginItems(at: appPath) else { return }
+            LoginServiceKit.addLoginItems(at: appPath)
+        } else {
+            guard LoginServiceKit.isExistLoginItems(at: appPath) else { return }
+            LoginServiceKit.removeLoginItems(at: appPath)
+        }
     }
 
     private func reflectLoginItemState() {
