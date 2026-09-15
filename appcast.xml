@@ -6,6 +6,14 @@
     <link>https://github.com/Proximity333/Clipy</link>
     <description>Clipy app updates</description>
     <item>
+      <title>Clipy 2.3.1</title>
+      <sparkle:version>2.3.1</sparkle:version>
+      <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
+      <pubDate>Tue, 15 Sep 2026 01:42:21 +0000</pubDate>
+      <sparkle:releaseNotesLink>https://github.com/Proximity333/Clipy/releases/tag/v2.3.1</sparkle:releaseNotesLink>
+      <link>https://github.com/Proximity333/Clipy/releases/download/v2.3.1/Clipy-2.3.1.zip</link>
+    </item>
+    <item>
       <title>Clipy 2.3.0</title>
       <sparkle:version>2.3.0</sparkle:version>
       <sparkle:shortVersionString>2.3.0</sparkle:shortVersionString>
