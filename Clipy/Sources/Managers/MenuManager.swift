@@ -581,7 +581,8 @@ extension MenuManager: NSMenuDelegate {
 private final class MenuTooltipWindowController {
     private let panel: NSPanel
     private let textField: NSTextField
-    private let effectView: NSVisualEffectView
+    private let glass: GlassCard
+    private let content: NSView
     private let maxSize = NSSize(width: 360, height: 180)
     private let minSize = NSSize(width: 240, height: 52)
     private let contentInset = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
@@ -601,18 +602,10 @@ private final class MenuTooltipWindowController {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
 
-        let contentView = NSView(frame: NSRect(origin: .zero, size: minSize))
-        contentView.wantsLayer = true
-        contentView.layer?.cornerRadius = 10
-        contentView.layer?.masksToBounds = true
-        contentView.layer?.borderWidth = 1
-        contentView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.25).cgColor
-
-        effectView = NSVisualEffectView(frame: contentView.bounds)
-        effectView.autoresizingMask = [.width, .height]
-        effectView.material = .menu
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
+        content = NSView(frame: NSRect(origin: .zero, size: minSize))
+        // Regular glass: this is a standalone floating panel, not a card inside
+        // one, so it uses the more opaque variant.
+        glass = GlassCard(hosting: content, style: .regular, cornerRadius: GlassMetrics.previewCornerRadius)
 
         textField = NSTextField(wrappingLabelWithString: "")
         textField.frame = NSRect(x: contentInset.left,
@@ -624,9 +617,8 @@ private final class MenuTooltipWindowController {
         textField.maximumNumberOfLines = 0
         textField.lineBreakMode = .byWordWrapping
 
-        contentView.addSubview(effectView)
-        contentView.addSubview(textField)
-        panel.contentView = contentView
+        content.addSubview(textField)
+        panel.contentView = glass
         panel.orderOut(nil)
     }
 
@@ -654,7 +646,6 @@ private final class MenuTooltipWindowController {
         let height = min(max(measured.height + contentInset.top + contentInset.bottom, minSize.height), maxSize.height)
 
         panel.setContentSize(NSSize(width: width, height: height))
-        panel.contentView?.frame = NSRect(origin: .zero, size: NSSize(width: width, height: height))
         textField.frame = NSRect(x: contentInset.left,
                                  y: contentInset.bottom,
                                  width: width - contentInset.left - contentInset.right,

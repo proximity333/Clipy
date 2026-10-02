@@ -35,13 +35,6 @@ final class SearchPopoverController: NSViewController {
         case clip(CPYClip)
     }
 
-    private struct SearchPalette {
-        let chromeBackground: NSColor
-        let chromeBorder: NSColor
-        let cardBackground: NSColor
-        let cardBorder: NSColor
-    }
-
     // MARK: - Properties
     weak var delegate: SearchPopoverDelegate?
 
@@ -52,15 +45,35 @@ final class SearchPopoverController: NSViewController {
     private var clickMonitor: Any?
     private(set) var previousActiveApp: NSRunningApplication?
 
+    // 最外层玻璃浮窗。内部依次是拖拽条、搜索卡片与内容区。
+    //
+    // 整块面板只保留这一层玻璃：Liquid Glass 每多嵌套一层就会把背景再折射一次，
+    // 四层 `.clear` 叠在 `.regular` 上会让整个面板发浑。内部区域因此改用无材质的
+    // 普通视图，只靠留白与极淡分割线分区。
+    private let chromeView = NSView()
+    private lazy var chromeCard = GlassCard(hosting: chromeView,
+                                            style: .regular,
+                                            cornerRadius: GlassMetrics.windowCornerRadius)
+
+    // 搜索栏：唯一的第二层玻璃，用在输入区形成视觉焦点。
     private let searchContainer = NSView()
+    private lazy var searchCard = GlassCard(hosting: searchContainer, style: .clear)
+
     private let searchField = NSSearchField()
     private let tabContainer = NSView()
     private let tabSegmentedControl = NSSegmentedControl()
-    private let settingsButton = NSButton()
-    private let resetLayoutButton = NSButton()
-    private let chromeView = NSView()
+    private let settingsButton = GlassIconButton(systemSymbolName: "gearshape",
+                                                 accessibilityLabel: "设置",
+                                                 target: nil,
+                                                 action: #selector(openSettings))
+    private let resetLayoutButton = GlassIconButton(systemSymbolName: "arrow.counterclockwise",
+                                                    accessibilityLabel: "恢复默认布局",
+                                                    toolTip: "恢复默认窗口尺寸与分栏位置",
+                                                    target: nil,
+                                                    action: #selector(resetLayoutToDefault))
     private let dragBar = DragBarView()
 
+    // 内容区：无玻璃。列表、预览、信息栏靠留白和一条细分隔线区分。
     private let contentContainer = NSView()
     private let listContainer = NSView()
     private let previewContainer = NSView()
@@ -68,9 +81,13 @@ final class SearchPopoverController: NSViewController {
     private let splitDivider = SplitDividerView()
 
     private static let defaultWindowSize = NSSize(width: 640, height: 420)
+    private static let minimumWindowSize = NSSize(width: 480, height: 320)
+    private static let maximumWindowSize = NSSize(width: 960, height: 640)
     private static let defaultListWidth: CGFloat = 220
 
     private var listWidthConstraint: NSLayoutConstraint?
+    private var chromeWidthConstraint: NSLayoutConstraint?
+    private var chromeHeightConstraint: NSLayoutConstraint?
     private var splitDividerLocation: CGFloat = 220
 
     private let listTitleLabel = NSTextField(labelWithString: "")
@@ -90,8 +107,15 @@ final class SearchPopoverController: NSViewController {
     private var previewTextTopConstraint: NSLayoutConstraint?
     private var previewTextBottomConstraint: NSLayoutConstraint?
 
-    private let deleteButton = NSButton()
-    private let favoriteButton = NSButton()
+    private let deleteButton = GlassIconButton(systemSymbolName: "trash",
+                                               accessibilityLabel: "删除",
+                                               target: nil,
+                                               action: #selector(deleteCurrentItem))
+    private let favoriteButton = GlassIconButton(systemSymbolName: "star",
+                                                 accessibilityLabel: "收藏",
+                                                 toolTip: "收藏/取消收藏",
+                                                 target: nil,
+                                                 action: #selector(toggleFavorite))
 
     private let sourceKeyLabel = NSTextField(labelWithString: "来源")
     private let sourceValueLabel = NSTextField(labelWithString: "-")
@@ -101,7 +125,10 @@ final class SearchPopoverController: NSViewController {
     private let typeValueLabel = NSTextField(labelWithString: "-")
     private let sizeKeyLabel = NSTextField(labelWithString: "尺寸")
     private let sizeValueLabel = NSTextField(labelWithString: "-")
-    private let quitButton = NSButton()
+    private let quitButton = GlassIconButton(systemSymbolName: "power",
+                                             accessibilityLabel: "退出",
+                                             target: nil,
+                                             action: #selector(quitApplication))
 
     // MARK: - Initialization
     init(clips: [CPYClip]) {
@@ -116,9 +143,10 @@ final class SearchPopoverController: NSViewController {
 
     // MARK: - Lifecycle
     override func loadView() {
-        // Size is set by the window (see show(at:)). Starting from .zero avoids
-        // a hardcoded content size that autolayout can snap the window back to.
-        let rootView = NSView(frame: .zero)
+        // 必须给出初始尺寸：整个层级是全 edge 约束，没有任何内在尺寸来源，
+        // 从 .zero 起步会让自动布局把窗口收缩成 0x0（面板随之不可见）。
+        // 真实的窗口尺寸随后由 `show(at:)` 按用户保存的值设置。
+        let rootView = NSView(frame: NSRect(origin: .zero, size: Self.defaultWindowSize))
         rootView.wantsLayer = true
         rootView.layer?.backgroundColor = NSColor.clear.cgColor
         view = rootView
@@ -130,7 +158,6 @@ final class SearchPopoverController: NSViewController {
         // width/height constraints on the content view, which pin the window
         // size and make every setFrame/setContentSize a no-op.
         setupUI()
-        applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(handleThemeDidChange), name: .themeDidChange, object: nil)
         reloadResults(keepSelection: false)
         updateListActionButton()
@@ -152,14 +179,11 @@ final class SearchPopoverController: NSViewController {
     }
 
     private func setupChromeView() {
-        chromeView.wantsLayer = true
-        chromeView.layer?.cornerRadius = 18
-        chromeView.layer?.masksToBounds = true
-        chromeView.layer?.backgroundColor = NSColor(calibratedWhite: 0.15, alpha: 0.98).cgColor
-        chromeView.layer?.borderWidth = 1
-        chromeView.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+        // The window itself is transparent; the outer regular glass is the
+        // only backdrop, so it is the single source of the panel's silhouette.
         chromeView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(chromeView)
+        chromeCard.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chromeCard)
     }
 
     private func setupDragBar() {
@@ -168,16 +192,17 @@ final class SearchPopoverController: NSViewController {
     }
 
     private func setupSearchContainer() {
-        styleCard(searchContainer, radius: 16)
         searchContainer.translatesAutoresizingMaskIntoConstraints = false
-        chromeView.addSubview(searchContainer)
+        searchCard.translatesAutoresizingMaskIntoConstraints = false
+        chromeView.addSubview(searchCard)
 
         searchField.placeholderString = "搜索..."
-        searchField.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        searchField.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         searchField.sendsSearchStringImmediately = true
         searchField.focusRingType = .none
         searchField.isBordered = false
         searchField.bezelStyle = .roundedBezel
+        searchField.borderShape = .capsule
         searchField.drawsBackground = false
         searchField.cell?.usesSingleLineMode = true
         if let cell = searchField.cell as? NSSearchFieldCell {
@@ -188,9 +213,6 @@ final class SearchPopoverController: NSViewController {
         searchField.delegate = self
         searchContainer.addSubview(searchField)
 
-        tabContainer.wantsLayer = true
-        tabContainer.layer?.backgroundColor = NSColor.clear.cgColor
-        tabContainer.layer?.borderWidth = 0
         tabContainer.translatesAutoresizingMaskIntoConstraints = false
         searchContainer.addSubview(tabContainer)
 
@@ -205,45 +227,18 @@ final class SearchPopoverController: NSViewController {
         tabSegmentedControl.translatesAutoresizingMaskIntoConstraints = false
         tabContainer.addSubview(tabSegmentedControl)
 
-        settingsButton.bezelStyle = .texturedRounded
-        settingsButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
-        } else {
-            settingsButton.image = NSImage(named: NSImage.Name("NSActionTemplate"))
-        }
-        settingsButton.imagePosition = .imageOnly
         settingsButton.target = self
         settingsButton.action = #selector(openSettings)
-        settingsButton.translatesAutoresizingMaskIntoConstraints = false
         searchContainer.addSubview(settingsButton)
 
-        resetLayoutButton.bezelStyle = .texturedRounded
-        resetLayoutButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            resetLayoutButton.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: "恢复默认布局")
-        } else {
-            resetLayoutButton.image = NSImage(named: NSImage.Name("NSRefreshTemplate"))
-        }
-        resetLayoutButton.imagePosition = .imageOnly
         resetLayoutButton.target = self
         resetLayoutButton.action = #selector(resetLayoutToDefault)
-        resetLayoutButton.toolTip = "恢复默认窗口尺寸与分栏位置"
-        resetLayoutButton.translatesAutoresizingMaskIntoConstraints = false
         searchContainer.addSubview(resetLayoutButton)
-        settingsButton.translatesAutoresizingMaskIntoConstraints = false
-        searchContainer.addSubview(settingsButton)
     }
 
     private func setupContentContainers() {
-        contentContainer.wantsLayer = true
-        contentContainer.layer?.backgroundColor = NSColor.clear.cgColor
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         chromeView.addSubview(contentContainer)
-
-        styleCard(listContainer, radius: 16)
-        styleCard(previewContainer, radius: 16)
-        styleCard(metaContainer, radius: 16)
 
         [listContainer, previewContainer, metaContainer].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -252,13 +247,13 @@ final class SearchPopoverController: NSViewController {
     }
 
     private func setupListView() {
-        listTitleLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        listTitleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         listTitleLabel.textColor = .secondaryLabelColor
         listTitleLabel.stringValue = FilterTab.history.title
         listTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         listContainer.addSubview(listTitleLabel)
 
-        listActionButton.bezelStyle = .texturedRounded
+        listActionButton.bezelStyle = .accessoryBar
         listActionButton.isBordered = false
         listActionButton.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         listActionButton.target = self
@@ -292,7 +287,7 @@ final class SearchPopoverController: NSViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         listContainer.addSubview(scrollView)
 
-        emptyStateLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        emptyStateLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         emptyStateLabel.textColor = .secondaryLabelColor
         emptyStateLabel.alignment = .center
         emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -305,47 +300,22 @@ final class SearchPopoverController: NSViewController {
 
         // Header view with title and delete button
         let headerView = NSView()
-        headerView.wantsLayer = true
-        headerView.layer?.backgroundColor = NSColor.clear.cgColor
         headerView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(headerView)
 
-        previewTitleLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        previewTitleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         previewTitleLabel.textColor = .secondaryLabelColor
         previewTitleLabel.stringValue = "预览"
         previewTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         headerView.addSubview(previewTitleLabel)
 
-        deleteButton.bezelStyle = .texturedRounded
-        deleteButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "删除")
-        } else {
-            deleteButton.image = NSImage(named: NSImage.stopProgressTemplateName)
-        }
-        deleteButton.imagePosition = .imageOnly
-        deleteButton.target = self
-        deleteButton.action = #selector(deleteCurrentItem)
         deleteButton.isHidden = true
-        deleteButton.translatesAutoresizingMaskIntoConstraints = false
         headerView.addSubview(deleteButton)
 
-        favoriteButton.bezelStyle = .texturedRounded
-        favoriteButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            favoriteButton.image = NSImage(systemSymbolName: "star", accessibilityDescription: "收藏")
-        } else {
-            favoriteButton.image = NSImage(named: NSImage.Name("NSActionTemplate"))
-        }
-        favoriteButton.imagePosition = .imageOnly
-        favoriteButton.target = self
-        favoriteButton.action = #selector(toggleFavorite)
         favoriteButton.isHidden = true
-        favoriteButton.toolTip = "收藏/取消收藏"
-        favoriteButton.translatesAutoresizingMaskIntoConstraints = false
         headerView.addSubview(favoriteButton)
 
-        previewTextView.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        previewTextView.font = NSFont.systemFont(ofSize: 12, weight: .regular)
         previewTextView.textColor = .labelColor
         previewTextView.isEditable = false
         previewTextView.isSelectable = false
@@ -394,7 +364,7 @@ final class SearchPopoverController: NSViewController {
             $0.textColor = .secondaryLabelColor
         }
 
-        sourceValueLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        sourceValueLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         sourceValueLabel.textColor = .labelColor
         sourceValueLabel.lineBreakMode = .byTruncatingTail
         sourceValueLabel.maximumNumberOfLines = 1
@@ -403,21 +373,10 @@ final class SearchPopoverController: NSViewController {
         sourceValueLabel.cell?.lineBreakMode = .byTruncatingTail
 
         [typeValueLabel, sizeValueLabel].forEach {
-            $0.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+            $0.font = NSFont.systemFont(ofSize: 11, weight: .medium)
             $0.textColor = .labelColor
         }
 
-        quitButton.bezelStyle = .texturedRounded
-        quitButton.isBordered = false
-        if #available(macOS 11.0, *) {
-            quitButton.image = NSImage(systemSymbolName: "power", accessibilityDescription: "退出")
-        } else {
-            quitButton.image = NSImage(named: NSImage.stopProgressTemplateName)
-        }
-        quitButton.imagePosition = .imageOnly
-        quitButton.target = self
-        quitButton.action = #selector(quitApplication)
-        quitButton.translatesAutoresizingMaskIntoConstraints = false
         metaContainer.addSubview(quitButton)
     }
 
@@ -433,11 +392,29 @@ final class SearchPopoverController: NSViewController {
     }
 
     private func chromeConstraints() -> [NSLayoutConstraint] {
-        [
-            chromeView.topAnchor.constraint(equalTo: view.topAnchor),
-            chromeView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            chromeView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chromeView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        // NSWindow constrains its content view, and the content view here is
+        // constrained back to the window, so neither side has an intrinsic size
+        // and AppKit settles on 0x0. Giving the glass card a concrete intrinsic
+        // size breaks that cycle and makes the window adopt it. Centre anchors
+        // (not edges) keep the size unambiguous while the user drags an edge.
+        // These must stay the only *required* size anchors, and must track the window
+        // exactly. Every path that changes the window size has to go through
+        // `syncChromeSize(to:)` — programmatic `setFrame` does not emit the drag
+        // callback, so updating them anywhere else lets the card keep a stale size.
+        let width = chromeCard.widthAnchor.constraint(equalToConstant: Self.defaultWindowSize.width)
+        let height = chromeCard.heightAnchor.constraint(equalToConstant: Self.defaultWindowSize.height)
+        // Dropping these below required lets the window win if it ever disagrees,
+        // so a missed sync degrades to a slightly off-sized card rather than a
+        // 0x0 collapse.
+        width.priority = .defaultHigh
+        height.priority = .defaultHigh
+        chromeWidthConstraint = width
+        chromeHeightConstraint = height
+        return [
+            chromeCard.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            chromeCard.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            width,
+            height,
 
             // Drag bar at the top of chrome view
             dragBar.topAnchor.constraint(equalTo: chromeView.topAnchor),
@@ -449,10 +426,10 @@ final class SearchPopoverController: NSViewController {
 
     private func searchBarConstraints() -> [NSLayoutConstraint] {
         [
-            searchContainer.topAnchor.constraint(equalTo: dragBar.bottomAnchor),
-            searchContainer.leadingAnchor.constraint(equalTo: chromeView.leadingAnchor, constant: 14),
-            searchContainer.trailingAnchor.constraint(equalTo: chromeView.trailingAnchor, constant: -14),
-            searchContainer.heightAnchor.constraint(equalToConstant: 36),
+            searchCard.topAnchor.constraint(equalTo: dragBar.bottomAnchor),
+            searchCard.leadingAnchor.constraint(equalTo: chromeView.leadingAnchor, constant: GlassMetrics.panelInset),
+            searchCard.trailingAnchor.constraint(equalTo: chromeView.trailingAnchor, constant: -GlassMetrics.panelInset),
+            searchCard.heightAnchor.constraint(equalToConstant: 34),
 
             searchField.leadingAnchor.constraint(equalTo: searchContainer.leadingAnchor, constant: 16),
             searchField.trailingAnchor.constraint(equalTo: tabContainer.leadingAnchor, constant: -10),
@@ -469,25 +446,28 @@ final class SearchPopoverController: NSViewController {
 
             settingsButton.trailingAnchor.constraint(equalTo: resetLayoutButton.leadingAnchor, constant: -6),
             settingsButton.centerYAnchor.constraint(equalTo: searchContainer.centerYAnchor),
-            settingsButton.widthAnchor.constraint(equalToConstant: 24),
-            settingsButton.heightAnchor.constraint(equalToConstant: 24),
+            settingsButton.widthAnchor.constraint(equalToConstant: GlassMetrics.iconButtonSide),
+            settingsButton.heightAnchor.constraint(equalToConstant: GlassMetrics.iconButtonSide),
 
             resetLayoutButton.trailingAnchor.constraint(equalTo: searchContainer.trailingAnchor, constant: -10),
             resetLayoutButton.centerYAnchor.constraint(equalTo: searchContainer.centerYAnchor),
-            resetLayoutButton.widthAnchor.constraint(equalToConstant: 24),
-            resetLayoutButton.heightAnchor.constraint(equalToConstant: 24)
+            resetLayoutButton.widthAnchor.constraint(equalToConstant: GlassMetrics.iconButtonSide),
+            resetLayoutButton.heightAnchor.constraint(equalToConstant: GlassMetrics.iconButtonSide)
         ]
     }
 
     private func contentPanelConstraints() -> [NSLayoutConstraint] {
         [
-            contentContainer.topAnchor.constraint(equalTo: searchContainer.bottomAnchor, constant: 12),
-            contentContainer.leadingAnchor.constraint(equalTo: chromeView.leadingAnchor, constant: 14),
-            contentContainer.trailingAnchor.constraint(equalTo: chromeView.trailingAnchor, constant: -14),
-            contentContainer.bottomAnchor.constraint(equalTo: chromeView.bottomAnchor, constant: -14),
+            contentContainer.topAnchor.constraint(equalTo: searchContainer.bottomAnchor, constant: 10),
+            contentContainer.leadingAnchor.constraint(equalTo: chromeView.leadingAnchor, constant: GlassMetrics.panelInset),
+            contentContainer.trailingAnchor.constraint(equalTo: chromeView.trailingAnchor, constant: -GlassMetrics.panelInset),
+            contentContainer.bottomAnchor.constraint(equalTo: chromeView.bottomAnchor, constant: -GlassMetrics.panelInset),
 
             listContainer.topAnchor.constraint(equalTo: contentContainer.topAnchor),
             listContainer.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            // No extra bottom inset here: the container already reserves the
+            // panel inset, and stacking the two left a visibly wide empty band
+            // once the cards stopped framing the content.
             listContainer.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
             {
                 let saved = AppEnvironment.current.defaults.double(forKey: Constants.UserDefaults.searchListWidth)
@@ -506,32 +486,35 @@ final class SearchPopoverController: NSViewController {
             splitDivider.trailingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
 
             previewContainer.topAnchor.constraint(equalTo: contentContainer.topAnchor),
-            previewContainer.leadingAnchor.constraint(equalTo: splitDivider.trailingAnchor),
+            previewContainer.leadingAnchor.constraint(equalTo: splitDivider.trailingAnchor, constant: 4),
             previewContainer.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
             // Height must follow the window instead of being a fixed 288,
             // so the preview fills whatever vertical space is left over.
-            previewContainer.bottomAnchor.constraint(equalTo: metaContainer.topAnchor, constant: -6),
+            // A 1pt gap separates the metadata strip from the preview body. Spacing rather
+            // than a drawn line: on glass a rule reads as a hard edge, while a
+            // gap groups just as clearly and stays out of the way.
+            previewContainer.bottomAnchor.constraint(equalTo: metaContainer.topAnchor, constant: -1),
 
             metaContainer.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
             metaContainer.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
-            metaContainer.heightAnchor.constraint(equalToConstant: 52),
+            metaContainer.heightAnchor.constraint(equalToConstant: 44),
             metaContainer.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
         ]
     }
 
     private func listPanelConstraints() -> [NSLayoutConstraint] {
         [
-            listTitleLabel.topAnchor.constraint(equalTo: listContainer.topAnchor, constant: 10),
-            listTitleLabel.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor, constant: 16),
+            listTitleLabel.topAnchor.constraint(equalTo: listContainer.topAnchor, constant: 4),
+            listTitleLabel.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor, constant: 8),
             listTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: listActionButton.leadingAnchor, constant: -8),
 
-            listActionButton.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor, constant: -12),
+            listActionButton.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor, constant: -8),
             listActionButton.centerYAnchor.constraint(equalTo: listTitleLabel.centerYAnchor),
 
-            scrollView.topAnchor.constraint(equalTo: listTitleLabel.bottomAnchor, constant: 8),
-            scrollView.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor, constant: 4),
-            scrollView.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor, constant: -4),
-            scrollView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor, constant: -8),
+            scrollView.topAnchor.constraint(equalTo: listTitleLabel.bottomAnchor, constant: 6),
+            scrollView.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor, constant: 2),
+            scrollView.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor, constant: -2),
+            scrollView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor, constant: -2),
 
             emptyStateLabel.centerXAnchor.constraint(equalTo: listContainer.centerXAnchor),
             emptyStateLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor)
@@ -543,15 +526,15 @@ final class SearchPopoverController: NSViewController {
             // Header view (title + delete button)
             {
                 let headerView = previewTitleLabel.superview!
-                return headerView.topAnchor.constraint(equalTo: previewContainer.topAnchor, constant: 10)
+                return headerView.topAnchor.constraint(equalTo: previewContainer.topAnchor, constant: 4)
             }(),
             {
                 let headerView = previewTitleLabel.superview!
-                return headerView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 12)
+                return headerView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 6)
             }(),
             {
                 let headerView = previewTitleLabel.superview!
-                return headerView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -12)
+                return headerView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -6)
             }(),
             {
                 let headerView = previewTitleLabel.superview!
@@ -571,9 +554,9 @@ final class SearchPopoverController: NSViewController {
             favoriteButton.widthAnchor.constraint(equalToConstant: 20),
             favoriteButton.heightAnchor.constraint(equalToConstant: 20),
 
-            previewImageView.topAnchor.constraint(equalTo: previewTitleLabel.superview!.bottomAnchor, constant: 8),
-            previewImageView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 12),
-            previewImageView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -12),
+            previewImageView.topAnchor.constraint(equalTo: previewTitleLabel.superview!.bottomAnchor, constant: 6),
+            previewImageView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 6),
+            previewImageView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -6),
             {
                 let fixedHeight = previewImageView.heightAnchor.constraint(equalToConstant: 140)
                 fixedHeight.priority = .defaultHigh
@@ -581,7 +564,7 @@ final class SearchPopoverController: NSViewController {
                 return fixedHeight
             }(),
             {
-                let pinnedBottom = previewImageView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor, constant: -10)
+                let pinnedBottom = previewImageView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor, constant: -6)
                 pinnedBottom.priority = .defaultHigh
                 pinnedBottom.isActive = true
                 self.previewImageBottomConstraint = pinnedBottom
@@ -599,45 +582,45 @@ final class SearchPopoverController: NSViewController {
                 self.previewTextTopConstraint = constraint
                 return constraint
             }(),
-            previewTextScrollView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 14),
-            previewTextScrollView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -14),
+            previewTextScrollView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 6),
+            previewTextScrollView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -6),
             {
                 let constraint = previewTextScrollView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor, constant: -10)
                 self.previewTextBottomConstraint = constraint
                 return constraint
             }(),
 
-            previewSubtitleLabel.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 14),
-            previewSubtitleLabel.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -14),
-            previewSubtitleLabel.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor, constant: -10)
+            previewSubtitleLabel.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 6),
+            previewSubtitleLabel.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -6),
+            previewSubtitleLabel.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor, constant: -6)
         ]
     }
 
     private func metaPanelConstraints() -> [NSLayoutConstraint] {
         [
             // Meta view: source (key on top, icon+value below) → type → size → quit
-            sourceIconView.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 14),
+            sourceIconView.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 6),
             sourceIconView.topAnchor.constraint(equalTo: sourceValueLabel.topAnchor),
             sourceIconView.widthAnchor.constraint(equalToConstant: 14),
             sourceIconView.heightAnchor.constraint(equalToConstant: 14),
 
-            sourceKeyLabel.topAnchor.constraint(equalTo: metaContainer.topAnchor, constant: 8),
-            sourceKeyLabel.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 14),
+            sourceKeyLabel.topAnchor.constraint(equalTo: metaContainer.topAnchor, constant: 4),
+            sourceKeyLabel.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 6),
             sourceValueLabel.topAnchor.constraint(equalTo: sourceKeyLabel.bottomAnchor, constant: 2),
             sourceValueLabel.leadingAnchor.constraint(equalTo: sourceIconView.trailingAnchor, constant: 5),
 
-            typeKeyLabel.topAnchor.constraint(equalTo: metaContainer.topAnchor, constant: 8),
-            typeKeyLabel.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 160),
+            typeKeyLabel.topAnchor.constraint(equalTo: metaContainer.topAnchor, constant: 4),
+            typeKeyLabel.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 150),
             typeValueLabel.topAnchor.constraint(equalTo: sourceValueLabel.topAnchor),
             typeValueLabel.leadingAnchor.constraint(equalTo: typeKeyLabel.leadingAnchor),
 
-            sizeKeyLabel.topAnchor.constraint(equalTo: metaContainer.topAnchor, constant: 8),
-            sizeKeyLabel.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 260),
+            sizeKeyLabel.topAnchor.constraint(equalTo: metaContainer.topAnchor, constant: 4),
+            sizeKeyLabel.leadingAnchor.constraint(equalTo: metaContainer.leadingAnchor, constant: 240),
             sizeValueLabel.topAnchor.constraint(equalTo: sourceValueLabel.topAnchor),
             sizeValueLabel.leadingAnchor.constraint(equalTo: sizeKeyLabel.leadingAnchor),
 
             quitButton.centerYAnchor.constraint(equalTo: metaContainer.centerYAnchor),
-            quitButton.trailingAnchor.constraint(equalTo: metaContainer.trailingAnchor, constant: -12),
+            quitButton.trailingAnchor.constraint(equalTo: metaContainer.trailingAnchor, constant: -6),
             quitButton.widthAnchor.constraint(equalToConstant: 20),
             quitButton.heightAnchor.constraint(equalToConstant: 20)
         ]
@@ -646,12 +629,16 @@ final class SearchPopoverController: NSViewController {
     // MARK: - Public Methods
     func show(at location: NSPoint) {
         previousActiveApp = NSWorkspace.shared.frontmostApplication
+        // The view hierarchy must exist before it can become the window's
+        // contentView; loading it here also lets `defaultWindowSize` drive the
+        // very first layout pass.
+        loadViewIfNeeded()
 
         // Restore persisted size, clamped to the window's min/max limits.
         let savedWidth = AppEnvironment.current.defaults.double(forKey: Constants.UserDefaults.searchWindowWidth)
         let savedHeight = AppEnvironment.current.defaults.double(forKey: Constants.UserDefaults.searchWindowHeight)
-        let windowWidth = (savedWidth >= 480 && savedWidth <= 960) ? CGFloat(savedWidth) : Self.defaultWindowSize.width
-        let windowHeight = (savedHeight >= 320 && savedHeight <= 640) ? CGFloat(savedHeight) : Self.defaultWindowSize.height
+        let windowWidth = (savedWidth >= Self.minimumWindowSize.width && savedWidth <= Self.maximumWindowSize.width) ? CGFloat(savedWidth) : Self.defaultWindowSize.width
+        let windowHeight = (savedHeight >= Self.minimumWindowSize.height && savedHeight <= Self.maximumWindowSize.height) ? CGFloat(savedHeight) : Self.defaultWindowSize.height
         let screen = NSScreen.screens.first { NSMouseInRect(location, $0.frame, false) } ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? .zero
 
@@ -671,11 +658,18 @@ final class SearchPopoverController: NSViewController {
             originY = visibleFrame.maxY - windowHeight
         }
 
-        searchWindow = SearchWindow(contentRect: NSRect(x: originX, y: originY, width: windowWidth, height: windowHeight), contentViewController: self)
-        searchWindow?.minSize = NSSize(width: 480, height: 320)
-        searchWindow?.maxSize = NSSize(width: 960, height: 640)
+        searchWindow = SearchWindow(contentRect: NSRect(x: originX, y: originY, width: windowWidth, height: windowHeight),
+                                    contentView: view)
+        searchWindow?.minSize = Self.minimumWindowSize
+        searchWindow?.maxSize = Self.maximumWindowSize
         searchWindow?.dragBar = dragBar
         searchWindow?.splitDivider = splitDivider
+        // The glass card's intrinsic size is the source of truth for the window
+        // size, so start it at the restored size rather than the default.
+        syncChromeSize(to: NSSize(width: windowWidth, height: windowHeight))
+        searchWindow?.onFrameChanging = { [weak self] size in
+            self?.syncChromeSize(to: size)
+        }
         searchWindow?.preferredFirstResponder = searchField
         searchWindow?.onFrameDidChange = { [weak self] in
             self?.persistWindowSize()
@@ -688,11 +682,12 @@ final class SearchPopoverController: NSViewController {
             self?.selectAdjacentTab(movingForward: movesForward)
         }
         searchWindow?.delegate = self
-        // The content view from loadView is 640x420 and takes precedence over
-        // contentRect, so the restored size must be applied explicitly.
-        searchWindow?.setFrame(NSRect(x: originX, y: originY, width: windowWidth, height: windowHeight), display: false)
         NSApp.activate(ignoringOtherApps: true)
         searchWindow?.makeKeyAndOrderFront(nil)
+        searchWindow?.setFrame(NSRect(x: originX, y: originY, width: windowWidth, height: windowHeight), display: true)
+        // Mark synchronously right after the restored size is applied, so a
+        // size change is never recorded before the restore has taken effect.
+        searchWindow?.markLayoutReady()
         // Mark synchronously right after the restored size is applied, so a
         // size change is never recorded before the restore has taken effect.
         searchWindow?.markLayoutReady()
@@ -745,52 +740,23 @@ final class SearchPopoverController: NSViewController {
     }
 
     // MARK: - Private Helpers
-    private func styleCard(_ view: NSView, radius: CGFloat) {
-        view.wantsLayer = true
-        view.layer?.cornerRadius = radius
-        view.layer?.masksToBounds = true
-        view.layer?.borderWidth = 1
+    /// Keeps the glass card's intrinsic size in step with the window's.
+    ///
+    /// AppKit sizes this panel from that content, so if the two disagree the card
+    /// keeps its old size while the window shrinks to fit it and the contents get
+    /// clipped. Every window-size change must funnel through here: the drag
+    /// gesture reports via `onFrameChanging`, and programmatic changes (reset
+    /// layout, restoring a saved size) call this directly.
+    private func syncChromeSize(to size: NSSize) {
+        let clamped = NSSize(width: min(max(size.width, Self.minimumWindowSize.width), Self.maximumWindowSize.width),
+                             height: min(max(size.height, Self.minimumWindowSize.height), Self.maximumWindowSize.height))
+        guard chromeWidthConstraint?.constant != clamped.width || chromeHeightConstraint?.constant != clamped.height else { return }
+        chromeWidthConstraint?.constant = clamped.width
+        chromeHeightConstraint?.constant = clamped.height
     }
 
     @objc private func handleThemeDidChange() {
-        applyTheme()
         tableView.reloadData()
-    }
-
-    private func applyTheme() {
-        let palette = currentPalette
-        chromeView.layer?.backgroundColor = palette.chromeBackground.cgColor
-        chromeView.layer?.borderColor = palette.chromeBorder.cgColor
-
-        [searchContainer, listContainer, previewContainer, metaContainer].forEach {
-            $0.layer?.backgroundColor = palette.cardBackground.cgColor
-            $0.layer?.borderColor = palette.cardBorder.cgColor
-        }
-
-        tabContainer.layer?.backgroundColor = NSColor.clear.cgColor
-        tabContainer.layer?.borderColor = NSColor.clear.cgColor
-    }
-
-    private var currentPalette: SearchPalette {
-        if isDarkMode {
-            return SearchPalette(
-                chromeBackground: NSColor(calibratedWhite: 0.15, alpha: 0.98),
-                chromeBorder: NSColor.white.withAlphaComponent(0.14),
-                cardBackground: NSColor(calibratedWhite: 0.12, alpha: 0.92),
-                cardBorder: NSColor.white.withAlphaComponent(0.08)
-            )
-        }
-
-        return SearchPalette(
-            chromeBackground: NSColor(calibratedRed: 0.93, green: 0.94, blue: 0.96, alpha: 0.98),
-            chromeBorder: NSColor(calibratedWhite: 0.70, alpha: 0.95),
-            cardBackground: NSColor(calibratedRed: 0.98, green: 0.98, blue: 0.99, alpha: 0.98),
-            cardBorder: NSColor(calibratedWhite: 0.80, alpha: 0.95)
-        )
-    }
-
-    private var isDarkMode: Bool {
-        view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
     private func reloadResults(keepSelection: Bool) {
@@ -902,13 +868,8 @@ final class SearchPopoverController: NSViewController {
     }
 
     private func updateFavoriteButton(isFavorite: Bool) {
-        if #available(macOS 11.0, *) {
-            favoriteButton.image = NSImage(
-                systemSymbolName: isFavorite ? "star.fill" : "star",
-                accessibilityDescription: "收藏"
-            )
-            favoriteButton.contentTintColor = isFavorite ? .systemYellow : .secondaryLabelColor
-        }
+        favoriteButton.setSymbol(isFavorite ? "star.fill" : "star")
+        favoriteButton.contentTintColor = isFavorite ? .systemYellow : .secondaryLabelColor
     }
 
     @objc private func toggleFavorite() {
@@ -956,7 +917,7 @@ final class SearchPopoverController: NSViewController {
         previewTextScrollView.contentView.scroll(to: .zero)
         previewTextScrollView.reflectScrolledClipView(previewTextScrollView.contentView)
         previewTextTopConstraint?.constant = hasImage ? 12 : 0
-        previewTextBottomConstraint?.constant = -10
+        previewTextBottomConstraint?.constant = -6
 
         previewSubtitleLabel.stringValue = ""
         previewSubtitleLabel.isHidden = true
@@ -1096,6 +1057,10 @@ final class SearchPopoverController: NSViewController {
         if let window = searchWindow {
             let old = window.frame
             let newOrigin = NSPoint(x: old.minX, y: old.maxY - Self.defaultWindowSize.height)
+            // `setFrame` bypasses the drag gesture, so the content's intrinsic
+            // size has to be updated explicitly or the card stays at the old
+            // size and its contents get clipped.
+            syncChromeSize(to: Self.defaultWindowSize)
             window.setFrame(
                 NSRect(origin: newOrigin, size: Self.defaultWindowSize),
                 display: true,
@@ -1317,6 +1282,13 @@ extension SearchPopoverController: NSWindowDelegate {
     /// Fires for every resize, so the size is stored even if the final
     /// mouse-up happens outside the window.
     func windowDidResize(_ notification: Notification) {
+        // Safety net for the content's intrinsic size. The drag gesture already
+        // reports via `onFrameChanging`, but programmatic resizes (reset layout,
+        // restoring a saved size) do not, and a stale intrinsic size makes the
+        // contents get clipped.
+        if let size = notification.object as? NSWindow {
+            syncChromeSize(to: size.frame.size)
+        }
         persistWindowSize()
     }
 }
@@ -1340,9 +1312,10 @@ private final class SplitDividerView: NSView {
     override var acceptsFirstResponder: Bool { false }
     override var isFlipped: Bool { true }
 
-    /// Fully transparent: the gap between the panels is the visual separator,
-    /// this view only provides the drag target and its resize cursor.
-    var hitWidth: CGFloat { 6 }
+    /// Fully transparent: it only provides the drag target and its resize cursor.
+    /// The panes are told apart by spacing alone — a drawn separator reads as a
+    /// hard line across the glass and fights the material.
+    var hitWidth: CGFloat { 8 }
 
     init() {
         super.init(frame: .zero)
@@ -1395,6 +1368,10 @@ private final class SearchWindow: NSWindow {
     var onEscape: (() -> Void)?
     var onTabNavigation: ((Bool) -> Void)?
     var onFrameDidChange: (() -> Void)?
+    /// Fired while the user drags a resize edge, before the frame is applied.
+    /// The panel mirrors the size into its content's intrinsic size so AppKit
+    /// does not snap the window straight back.
+    var onFrameChanging: ((NSSize) -> Void)?
     weak var dragBar: DragBarView?
     weak var splitDivider: SplitDividerView?
 
@@ -1419,20 +1396,20 @@ private final class SearchWindow: NSWindow {
     private var gestureInitialLoc: NSPoint = .zero
     private var gestureActive = false
 
-    init(contentRect: NSRect, contentViewController: NSViewController) {
+    /// A `.titled` window with a hidden title bar rather than a `.borderless`
+    /// one. Borderless windows are sized by AppKit from their content's fitting
+    /// size, and this panel's hierarchy is all edge constraints, so the window
+    /// would collapse to 0x0. A titled window keeps ordinary frame semantics
+    /// while `fullSizeContentView` still lets the glass fill the whole window.
+    init(contentRect: NSRect, contentView: NSView) {
         super.init(
             contentRect: contentRect,
-            // `.resizable` is required: a non-resizable NSWindow has its size
-            // forced back by constrainFrameRect, so setFrame cannot resize it.
-            // `.resizable` is intentionally omitted: window resizing is fully
-            // handled in sendEvent. With it, autolayout was free to resize the
-            // window on its own, causing random jumps to 960/640 wide.
-            styleMask: [.borderless, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
 
-        self.contentViewController = contentViewController
+        self.contentView = contentView
         self.isReleasedWhenClosed = false
         self.level = .floating
         self.isMovable = false
@@ -1440,17 +1417,25 @@ private final class SearchWindow: NSWindow {
         self.hasShadow = true
         self.isOpaque = false
         self.backgroundColor = .clear
+        self.titleVisibility = .hidden
+        self.titlebarAppearsTransparent = true
+        self.standardWindowButton(.zoomButton)?.isHidden = true
+        self.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        self.standardWindowButton(.closeButton)?.isHidden = true
         self.collectionBehavior = [.transient, .ignoresCycle]
 
-        contentView?.wantsLayer = true
-        contentView?.layer?.cornerRadius = 18
-        contentView?.layer?.masksToBounds = true
-        contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        // The window frame itself is fully transparent; only the outer glass
+        // card draws the panel. Clipping still matches so the glass corner
+        // radius and the window silhouette never disagree.
+        contentView.wantsLayer = true
+        contentView.layer?.cornerRadius = GlassMetrics.windowCornerRadius
+        contentView.layer?.masksToBounds = true
+        contentView.layer?.backgroundColor = NSColor.clear.cgColor
 
-        contentView?.superview?.wantsLayer = true
-        contentView?.superview?.layer?.cornerRadius = 18
-        contentView?.superview?.layer?.masksToBounds = true
-        contentView?.superview?.layer?.backgroundColor = NSColor.clear.cgColor
+        contentView.superview?.wantsLayer = true
+        contentView.superview?.layer?.cornerRadius = GlassMetrics.windowCornerRadius
+        contentView.superview?.layer?.masksToBounds = true
+        contentView.superview?.layer?.backgroundColor = NSColor.clear.cgColor
 
         // Window move/resize are handled explicitly in sendEvent below,
         // so AppKit must not start its own window drag.
@@ -1460,7 +1445,7 @@ private final class SearchWindow: NSWindow {
             owner: self,
             userInfo: nil
         )
-        contentView?.addTrackingArea(cursorTracking)
+        contentView.addTrackingArea(cursorTracking)
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -1591,6 +1576,7 @@ private final class SearchWindow: NSWindow {
             if resizeV == .minY {
                 newFrame.origin.y = gestureInitialFrame.maxY - newFrame.size.height
             }
+            onFrameChanging?(newFrame.size)
             setFrame(newFrame, display: true)
             return
 
@@ -1666,13 +1652,12 @@ private final class SearchResultRowView: NSTableRowView {
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 6, dy: 1)
-        let path = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-        let isDarkMode = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let selectionColor = isDarkMode
-            ? NSColor(calibratedRed: 0.20, green: 0.40, blue: 0.73, alpha: 1.0)
-            : NSColor(calibratedRed: 0.27, green: 0.52, blue: 0.90, alpha: 1.0)
-        selectionColor.setFill()
+        // Deliberately faint: the selection must not become the loudest element
+        // on the panel. At full accent strength it outweighs the search field
+        // and the section titles, which pulls all attention to the first row.
+        let rect = bounds.insetBy(dx: 6, dy: 2)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+        NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
         path.fill()
     }
 
@@ -1697,7 +1682,7 @@ private final class SearchResultCellView: NSTableCellView {
         thumbnailView.layer?.masksToBounds = true
         addSubview(thumbnailView)
 
-        titleField.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        titleField.font = NSFont.systemFont(ofSize: 12, weight: .regular)
         titleField.textColor = .labelColor
         titleField.lineBreakMode = .byTruncatingTail
         titleField.maximumNumberOfLines = 1
