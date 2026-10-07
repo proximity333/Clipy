@@ -1652,12 +1652,13 @@ private final class SearchResultRowView: NSTableRowView {
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
-        // Deliberately faint: the selection must not become the loudest element
-        // on the panel. At full accent strength it outweighs the search field
-        // and the section titles, which pulls all attention to the first row.
+        // The row sits on glass, so whatever is behind the window bleeds through
+        // the fill and a faint wash vanishes against a light backdrop. The tint is
+        // carried mostly by opacity rather than by a drawn edge, matching the
+        // panel's rule of not putting hard lines on the material.
         let rect = bounds.insetBy(dx: 6, dy: 2)
         let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
-        NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
+        NSColor.controlAccentColor.withAlphaComponent(0.5).setFill()
         path.fill()
     }
 
