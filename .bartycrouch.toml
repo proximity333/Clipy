@@ -1,0 +1,25 @@
+# BartyCrouch 4 configuration.
+#
+# Only the `interfaces` task is enabled, which is what BartyCrouch 3's
+# `interfaces` subcommand did. The extra tasks the newer version enables by
+# default are not wanted here:
+#
+# - `code` scans source for localized-string references, but this project
+#   generates its string accessors with SwiftGen, so it finds nothing useful
+#   while being free to rewrite entries.
+# - `normalize` sorts every Localizable.strings alphabetically and rewrites the
+#   files wholesale, which buries real string changes in a reordering diff and
+#   discards the file header comments.
+#
+# Pinning the task list keeps a build's diff limited to strings that really
+# changed.
+[update]
+tasks = ["interfaces"]
+
+[update.interfaces]
+paths = ["Clipy/Resources", "Clipy/Sources"]
+subpathsToIgnore = [".git", "Pods", "build"]
+defaultToBase = false
+ignoreEmptyStrings = false
+unstripped = false
+ignoreKeys = ["#bartycrouch-ignore!", "#bc-ignore!", "#i!"]
