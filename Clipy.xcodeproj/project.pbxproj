@@ -770,7 +770,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/SwiftGen/bin/swiftgen\"";
+			shellScript = "command -v swiftgen >/dev/null || { echo \"error: swiftgen not found, install it with 'brew install swiftgen'\"; exit 1; }; swiftgen";
 		};
 		FAAA88991E686CED0088FB34 /* BartyCrouch */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -784,7 +784,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/BartyCrouch/bartycrouch\" interfaces -p \"$PROJECT_DIR\"";
+			shellScript = "command -v bartycrouch >/dev/null || { echo \"error: bartycrouch not found, install it with 'brew install bartycrouch'\"; exit 1; }; bartycrouch update -p \"$PROJECT_DIR\"";
 		};
 		FAAD02201CA98E20007C6EEE /* SwiftLint */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -980,6 +980,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -1037,6 +1038,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libc++";
