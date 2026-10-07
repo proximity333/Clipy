@@ -535,6 +535,7 @@
 				07B47785AE0AC2185B570C28 /* [CP] Embed Pods Frameworks */,
 				FAAA88991E686CED0088FB34 /* BartyCrouch */,
 				FA10897F20EC24F700A3FEFC /* SwiftGen */,
+				FA9B88991E686CED0088FC02 /* Thin Sparkle Helpers (arm64 only) */,
 			);
 			buildRules = (
 			);
@@ -785,6 +786,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "command -v bartycrouch >/dev/null || { echo \"error: bartycrouch not found, install it with 'brew install bartycrouch'\"; exit 1; }; bartycrouch update -p \"$PROJECT_DIR\"";
+		};
+		FA9B88991E686CED0088FC02 /* Thin Sparkle Helpers (arm64 only) */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Thin Sparkle Helpers (arm64 only)";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nframework=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks/Sparkle.framework\"\n[ -d \"${framework}\" ] || exit 0\nlist=\"$(mktemp)\"\nfind \"${framework}\" -type f -perm +111 > \"${list}\"\nthinned=0\nwhile IFS= read -r binary; do\n  if lipo -info \"${binary}\" 2>/dev/null | grep -q x86_64; then\n    lipo \"${binary}\" -thin arm64 -output \"${binary}.arm64\"\n    mv -f \"${binary}.arm64\" \"${binary}\"\n    thinned=1\n  fi\ndone < \"${list}\"\nrm -f \"${list}\"\nif [ \"${thinned}\" = 1 ]; then\n  for nested in \\\n    \"${framework}/Versions/B/XPCServices/Downloader.xpc\" \\\n    \"${framework}/Versions/B/XPCServices/Installer.xpc\" \\\n    \"${framework}/Versions/B/Updater.app\"\n  do\n    if [ -d \"${nested}\" ]; then\n      codesign --force --sign - --options runtime --preserve-metadata=identifier,entitlements \"${nested}\"\n    fi\n  done\n  codesign --force --sign - --options runtime --preserve-metadata=identifier,entitlements \"${framework}\"\nfi\nif find \"${framework}\" -type f -perm +111 -exec lipo -info {} \\; 2>/dev/null | grep -q x86_64; then\n  echo \"error: an x86_64 slice is still present in ${framework}\"\n  exit 1\nfi\n";
 		};
 		FAAD02201CA98E20007C6EEE /* SwiftLint */ = {
 			isa = PBXShellScriptBuildPhase;
