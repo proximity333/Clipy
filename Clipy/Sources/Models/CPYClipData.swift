@@ -63,6 +63,11 @@ final class CPYClipData: NSObject {
     var isOnlyStringType: Bool {
         return types == [.deprecatedString]
     }
+    /// 只包含文本类内容（没有 RTF/PDF/图片/文件/URL）。
+    var isTextOnly: Bool {
+        guard !types.isEmpty else { return false }
+        return types.allSatisfy { CPYClipData.availableTypesDictinary[$0] == "String" }
+    }
     var hasMeaningfulContent: Bool {
         if !stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
         if RTFData != nil || PDF != nil || image != nil { return true }
