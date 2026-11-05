@@ -92,7 +92,7 @@ final class SearchPopoverController: NSViewController {
 
     private let listTitleLabel = NSTextField(labelWithString: "")
     private let listActionButton = NSButton()
-    private let tableView = NSTableView()
+    private let tableView = SearchResultsTableView()
     private let scrollView = NSScrollView()
     private let emptyStateLabel = NSTextField(labelWithString: "未找到匹配的历史记录")
 
@@ -276,6 +276,9 @@ final class SearchPopoverController: NSViewController {
         tableView.dataSource = self
         tableView.target = self
         tableView.doubleAction = #selector(tableViewDoubleClicked)
+        tableView.onReturnKey = { [weak self] in
+            self?.commitSelectedResult()
+        }
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
@@ -1004,6 +1007,12 @@ final class SearchPopoverController: NSViewController {
     }
 
     @objc private func tableViewDoubleClicked() {
+        commitSelectedResult()
+    }
+
+    /// 回车提交当前选中项。表格获得焦点（例如用鼠标点过某一行）时，回车不会经过
+    /// 搜索框的 `insertNewline(_:)`，需要由表格自己转发，否则只有第一行能粘贴。
+    private func commitSelectedResult() {
         guard let result = selectedResult() else { return }
         delegate?.searchPopoverDidSelectResult(result)
         close()
@@ -1731,5 +1740,19 @@ private final class SearchResultCellView: NSTableCellView {
             width: textWidth,
             height: 16
         )
+    }
+}
+
+// MARK: - SearchResultsTableView
+/// 只拦截回车，方向键、翻页和输入仍交给 NSTableView 原生处理。
+private final class SearchResultsTableView: NSTableView {
+    var onReturnKey: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 36 || event.keyCode == 76 { // Return / keypad Enter
+            onReturnKey?()
+            return
+        }
+        super.keyDown(with: event)
     }
 }

@@ -682,8 +682,15 @@ extension MenuManager: SearchTextFieldDelegate {
 
             if highlightedMenuItemIndex >= 0 && highlightedMenuItemIndex < items.count {
                 let menuItem = items[highlightedMenuItemIndex]
-                if let action = menuItem.action, let target = menuItem.target {
-                    NSApp.sendAction(action, to: target, from: menuItem)
+                // 历史项创建时没有设置 target，菜单项未显示/未验证时 target 为 nil。
+                // 原来用 `if let target = menuItem.target` 把这种情况整个吞掉了，
+                // 于是「用方向键选中非首项后按回车」没有任何反应，只有没有移动高亮、
+                // 走下面 filteredClips.first 兜底时才能粘贴。
+                if let action = menuItem.action {
+                    let handled = NSApp.sendAction(action, to: menuItem.target, from: menuItem)
+                    if !handled {
+                        NSApp.sendAction(action, to: NSApp.delegate, from: menuItem)
+                    }
                 }
             } else if let firstClip = filteredClips.first {
                 // Select first clip
