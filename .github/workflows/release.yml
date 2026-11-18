@@ -111,8 +111,8 @@ jobs:
       - name: Pod install
         run: bundle exec pod install
 
-      - name: Install BartyCrouch
-        run: brew install bartycrouch
+      - name: Install build tools
+        run: brew install bartycrouch swiftgen
 
       - name: Build the app
         run: |
