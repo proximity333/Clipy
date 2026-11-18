@@ -24,6 +24,7 @@ class AppDelegate: NSObject, NSMenuItemValidation {
 
     // MARK: - Properties
     let disposeBag = DisposeBag()
+    private(set) var updaterController: SPUStandardUpdaterController?
 
     // MARK: - Init
     override func awakeFromNib() {
@@ -166,10 +167,13 @@ extension AppDelegate: NSApplicationDelegate {
         }
 
         // Sparkle
-        let updater = SUUpdater.shared()
-        updater?.feedURL = Constants.Application.appcastURL
-        updater?.automaticallyChecksForUpdates = AppEnvironment.current.defaults.bool(forKey: Constants.Update.enableAutomaticCheck)
-        updater?.updateCheckInterval = TimeInterval(AppEnvironment.current.defaults.integer(forKey: Constants.Update.checkInterval))
+        // The feed URL comes from SUFeedURL in Info.plist; no need to set it here.
+        let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        updaterController = controller
+        controller.updater.automaticallyChecksForUpdates = AppEnvironment.current.defaults.bool(forKey: Constants.Update.enableAutomaticCheck)
+        controller.updater.updateCheckInterval = TimeInterval(AppEnvironment.current.defaults.integer(forKey: Constants.Update.checkInterval))
+        // Download updates in the background so they install in-app, without opening the browser.
+        controller.updater.automaticallyDownloadsUpdates = true
 
         // Binding Events
         bind()
