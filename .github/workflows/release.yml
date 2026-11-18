@@ -111,6 +111,9 @@ jobs:
       - name: Pod install
         run: bundle exec pod install
 
+      - name: Install BartyCrouch
+        run: brew install bartycrouch
+
       - name: Build the app
         run: |
           set -euo pipefail
