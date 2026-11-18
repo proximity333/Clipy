@@ -95,12 +95,11 @@ gh release create v2.1.3 "dist/Clipy-v2.1.3.zip" --title "v2.1.3" --notes-file R
 
 If you do not keep release notes in a file, replace `--notes-file RELEASE_NOTES.md` with `--generate-notes` or `--notes "..."`.
 
-10. Update `appcast.xml` after the release asset exists.
+10. Update the appcast (tags).
 
-- Set `<title>`, `<sparkle:version>`, `<sparkle:shortVersionString>`, and `<sparkle:releaseNotesLink>` to the new release.
-- Set `<link>` to the exact GitHub ZIP asset URL, for example `https://github.com/<owner>/<repo>/releases/download/v2.1.3/Clipy-v2.1.3.zip`.
-- Do not include an `<enclosure>` element. Sparkle is used only to notify users about a new version and open the download link in the browser.
-- Commit and push `appcast.xml` after the release upload is live so the in-app updater can see the new version.
+The release workflow does this for a pushed tag: it signs the DMG with the EdDSA key in `SPARKLE_PRIVATE_KEY`, adds an `<enclosure>` whose signature verifies against `SUPublicEDKey` in `Info.plist`, commits `appcast.xml` to `develop` (the app's `SUFeedURL`), and attaches the feed to the release. Do not edit `appcast.xml` by hand.
+
+The private key is in the login keychain under `Proximity333/Clipy`; export it with `Pods/Sparkle/bin/generate_keys --account Proximity333/Clipy -x <file>` if the repository secret needs to be set again. Never commit it.
 
 11. Clean local build outputs after the release is published.
 

@@ -16,8 +16,8 @@
 - Create a new git tag for the release version before packaging, for example `git tag v2.0.1`.
 - Build the release app with `xcodebuild -workspace Clipy.xcworkspace -scheme Clipy -configuration Release -derivedDataPath build/DerivedData ENABLE_TESTABILITY=YES build`, then package `build/DerivedData/Build/Products/Release/Clipy.app`.
 - Ensure the shared `Clipy` scheme does not build `ClipyTests` for running, and verify the packaged `Clipy.app` does not contain `ClipyTests.xctest`, `PlugIns`, or `XCTest*` frameworks before publishing.
-- Sparkle is used only for update checking. After uploading the release asset, update `appcast.xml` to the new version and point its `<link>` at the exact ZIP asset URL.
-- Push the `appcast.xml` update to the feed branch after the GitHub release asset is uploaded, otherwise the in-app updater will continue advertising the previous version.
+- Sparkle updates are signed and published by the tag workflow: it signs the disk image with the EdDSA key in the `SPARKLE_PRIVATE_KEY` secret, writes an appcast `<enclosure>` whose signature verifies against `SUPublicEDKey` in `Info.plist`, and commits `appcast.xml` to `develop` (the app's `SUFeedURL`). The same feed is attached to the release.
+- Do not hand-edit `appcast.xml` after a release; the workflow owns it. The private key lives in the login keychain (account `Proximity333/Clipy`, exported with `Pods/Sparkle/bin/generate_keys --account Proximity333/Clipy -x <file>`) and as the repository secret. Never commit it.
 - Commit the source changes and push both the branch and the tag to `origin`.
 - Use `gh release create` to publish the GitHub release and upload the packaged artifact.
 - After publishing, clean local outputs with `rm -rf dist build` and always remove Xcode build outputs for this project with `rm -rf ~/Library/Developer/Xcode/DerivedData/Clipy-*`.

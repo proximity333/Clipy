@@ -1,0 +1,296 @@
+# Pushing a tag "v<version>" builds the Mac app in Release configuration,
+# packages it into a disk image and publishes it as the latest release, with
+# the version read from the app's Info.plist for its title. Run by hand
+# (Actions → Release → Run workflow) it only builds, and keeps the products as
+# artifacts of the run.
+#
+# The app is built certificate-less: the project signs ad hoc
+# (CODE_SIGN_IDENTITY = "-"), so the disk image carries no Developer ID
+# signature and no notarization. A downloaded copy is quarantined by macOS;
+# the release notes tell the user how to clear them with `xattr -cr` so the
+# app opens.
+#
+# With a self-signed code signing certificate in the repository's secrets
+# (MAC_SIGNING_P12, MAC_SIGNING_P12_PASSWORD), the app is signed with it:
+# still certificate-less from Apple's point of view, but the signature stays
+# the same across releases, which macOS's permission database (TCC) keys
+# Accessibility grants on. An ad hoc signature pins the grant to the build's
+# cdhash, so it resets on every update; a stable certificate keeps it. Create
+# the certificate once (Keychain Access → Certificate Assistant → Create a
+# Certificate, Self Signed Root, Code Signing type), export it as a .p12, and
+# set MAC_SIGNING_P12 to its base64 (`base64 -i cert.p12`) and
+# MAC_SIGNING_P12_PASSWORD to its export password. Without the secrets the
+# build stays ad hoc, as before.
+#
+# The update feed is appcast.xml on the develop branch, which is the app's
+# SUFeedURL: each tagged run signs the disk image with the Sparkle EdDSA key in
+# the SPARKLE_PRIVATE_KEY secret, writes an <enclosure> whose signature
+# verifies against the SUPublicEDKey the app pins, and pushes the feed. The
+# release carries the same appcast.xml as an asset. Without the secret, a tag
+# is still published, but the feed is left alone and installed copies keep
+# seeing the previous version. The key is the one in the login keychain;
+# `Pods/Sparkle/bin/generate_keys --account Proximity333/Clipy -x <file>`
+# exports it as the base64 private key the secret holds. Never commit it.
+#
+# Do not sign the products with --options runtime (hardened runtime): its
+# library validation needs a team ID that an ad hoc signature does not have,
+# and the released app would die at launch refusing its own Sparkle framework
+# (see the tamio fix in "sign ad hoc without the hardened runtime"). The app
+# here is built and shipped exactly as Xcode signs it; the project does not
+# enable the hardened runtime. If a Developer ID release ever lands, the
+# runtime flag returns with it, as notarization requires it.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against the app's version
+        if: env.IS_TAG == 'true'
+        run: |
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'Clipy/Supporting Files/Info.plist')"
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::The tag is $GITHUB_REF_NAME but the app's version is $version. Update Info.plist, or tag v$version."
+            exit 1
+          fi
+
+      - name: Set up code signing
+        env:
+          MAC_SIGNING_P12: ${{ secrets.MAC_SIGNING_P12 }}
+          MAC_SIGNING_P12_PASSWORD: ${{ secrets.MAC_SIGNING_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MAC_SIGNING_P12:-}" ]]; then
+            echo "::warning::No signing certificate (MAC_SIGNING_P12) in the repository's secrets: the app is signed ad hoc, and Accessibility grants reset on every update. See the workflow's header for the self-signed certificate that keeps them."
+            exit 0
+          fi
+          p12="$RUNNER_TEMP/clipy-signing.p12"
+          printf '%s' "$MAC_SIGNING_P12" | base64 --decode > "$p12"
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$p12" -k "$keychain" -P "$MAC_SIGNING_P12_PASSWORD" \
+            -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" "$(security list-keychains -d user | tr -d '"')"
+          # A self-signed root fails the trust check, so -v would hide it;
+          # codesign signs with it regardless.
+          identity="$(security find-identity -p codesigning "$keychain" | sed -n 's/.*"\(.*\)".*/\1/p' | head -1)"
+          if [[ -z "$identity" ]]; then
+            echo "::error::The imported certificate holds no code signing identity"
+            exit 1
+          fi
+          echo "MAC_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Pod install
+        run: bundle exec pod install
+
+      - name: Build the app
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          set -o pipefail
+          xcodebuild \
+            -workspace Clipy.xcworkspace \
+            -scheme Clipy \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            ENABLE_TESTABILITY=YES \
+            CODE_SIGN_IDENTITY=- \
+            build 2>&1 | tee dist/build.log || {
+            grep -E 'error:' dist/build.log | sort -u | head -20
+            exit 1
+          }
+
+      - name: Sign the app for distribution
+        run: |
+          set -euo pipefail
+          app="build/DerivedData/Build/Products/Release/Clipy.app"
+          if [[ -z "${MAC_SIGNING_IDENTITY:-}" ]]; then
+            echo "No signing identity: the app stays as Xcode built it, ad hoc."
+            exit 0
+          fi
+          # The build's ad hoc signature carries get-task-allow: sign again
+          # with the repository's certificate, nested code first, then the
+          # app, keeping the entitlements each piece comes with. No --options
+          # runtime: its library validation would reject the Sparkle
+          # framework, which no Apple team ID backs here.
+          entitlements="$RUNNER_TEMP/app-entitlements.plist"
+          /usr/bin/codesign -d --entitlements - --xml "$app" 2>/dev/null > "$entitlements" || true
+          /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.get-task-allow' "$entitlements" 2>/dev/null || true
+          find "$app/Contents" -depth \( -name '*.framework' -o -name '*.dylib' -o -name '*.xpc' \
+            -o -name '*.app' -o -path '*/Sparkle.framework/Versions/*/Autoupdate' \) -print0 \
+            | while IFS= read -r -d '' nested; do
+                /usr/bin/codesign --force --sign "$MAC_SIGNING_IDENTITY" --timestamp=none \
+                  --preserve-metadata=entitlements "$nested"
+              done
+          /usr/bin/codesign --force --sign "$MAC_SIGNING_IDENTITY" --timestamp=none \
+            --entitlements "$entitlements" "$app"
+          /usr/bin/codesign --verify --deep --strict "$app"
+          /usr/bin/codesign -dvr- "$app" 2>&1 | grep -E 'designated|identifier' || true
+
+      - name: Verify the packaged app
+        run: |
+          set -euo pipefail
+          app="build/DerivedData/Build/Products/Release/Clipy.app"
+          [[ -d "$app" ]] || { echo "::error::Clipy.app was not built"; exit 1; }
+          # Test bundles must not ship in the release app.
+          [[ ! -e "$app/Contents/PlugIns" ]] || {
+            echo "::error::The packaged app contains PlugIns"; exit 1;
+          }
+          if find "$app" \( -name '*.xctest' -o -name 'XCTest*' \) | grep -q .; then
+            echo "::error::The packaged app contains XCTest components"
+            exit 1
+          fi
+          /usr/bin/codesign --verify --deep --strict "$app"
+          /usr/bin/codesign -dv "$app" 2>&1 | grep -E 'Signature=adhoc|Authority=|Identifier=' || true
+
+      - name: Package the disk image
+        run: |
+          set -euo pipefail
+          app="build/DerivedData/Build/Products/Release/Clipy.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          stage="dist/stage"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          ditto "$app" "$stage/Clipy.app"
+          # Ad hoc builds carry no Developer ID signature: clear any extended
+          # attributes (e.g. quarantine) the products picked up on the way.
+          xattr -cr "$stage/Clipy.app"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname "Clipy $version" -srcfolder "$stage" \
+            -fs HFS+ -format UDZO -ov "dist/Clipy-$version.dmg" >/dev/null
+          rm -rf "$stage"
+          ls -lh dist/Clipy-*.dmg
+
+      - name: Keep the products
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clipy
+          path: |
+            dist/Clipy-*.dmg
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: env.IS_TAG == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          ## 安装
+
+          把 DMG 里的 Clipy.app 拖入 Applications 即可。
+
+          ## 打开未签名版本
+
+          这个 DMG 里的应用没有 Developer ID 签名，也没有经过 Apple 公证。下载解压拖入 Applications 后，首次打开会被 macOS 拦下。在终端运行一次：
+
+          \`\`\`
+          xattr -cr /Applications/Clipy.app
+          \`\`\`
+
+          之后即可正常打开。
+          EOF
+          if [[ -n "${MAC_SIGNING_IDENTITY:-}" ]]; then
+            cat >> "$RUNNER_TEMP/notes.md" <<'EOF'
+
+          ## 辅助功能权限
+
+          首次运行请在 系统设置 → 隐私与安全性 → 辅助功能 中勾选 Clipy。本版本使用固定证书签名，之后升级或重装都会保留该授权，无需重复开启。
+          EOF
+          else
+            cat >> "$RUNNER_TEMP/notes.md" <<'EOF'
+
+          ## 辅助功能权限
+
+          本版本未使用固定证书签名，macOS 会在每次更新后视为新应用：辅助功能授权可能失效，需要到 系统设置 → 隐私与安全性 → 辅助功能 中重新勾选一次。
+          EOF
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            dist/Clipy-*.dmg \
+            --latest --title "Clipy $version" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+          {
+            echo "### Released"
+            if [[ -n "${MAC_SIGNING_IDENTITY:-}" ]]; then
+              echo "Clipy $version is signed with the repository's certificate (\"$MAC_SIGNING_IDENTITY\") and published as the latest release. Accessibility grants persist across updates."
+            else
+              echo "Clipy $version is built ad hoc (certificate-less) and published as the latest release. Accessibility grants reset on every update."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign the update and publish the feed
+        if: env.IS_TAG == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "::warning::No SPARKLE_PRIVATE_KEY secret: appcast.xml is unchanged and in-app updates keep advertising the previous version."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          image="$(ls dist/Clipy-*.dmg | head -1)"
+          key="$RUNNER_TEMP/sparkle.key"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$key"
+          chmod 600 "$key"
+
+          # The feed is develop's appcast.xml (the app's SUFeedURL). Build the
+          # entry on top of its tip, so entries published since the tag are
+          # kept, and check the signature against the key this build pins
+          # before it reaches installed copies.
+          git fetch --depth=1 origin develop
+          feed="$RUNNER_TEMP/appcast.xml"
+          git show FETCH_HEAD:appcast.xml > "$feed"
+          APPCAST="$feed" SPARKLE_KEY_FILE="$key" \
+            bash .github/scripts/appcast.sh "$image" "$GITHUB_REF_NAME" > /dev/null
+          bash .github/scripts/verify-appcast.sh "$image" "$feed"
+
+          if git show FETCH_HEAD:appcast.xml | diff -q - "$feed" > /dev/null; then
+            echo "appcast.xml is already current on develop."
+          else
+            sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/appcast.xml?ref=develop" --jq .sha)"
+            gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/appcast.xml" \
+              -f message="Update appcast.xml for $version" \
+              -f content="$(base64 < "$feed" | tr -d '\n')" \
+              -f sha="$sha" -f branch=develop > /dev/null
+          fi
+
+          # The same feed travels with the release, where future versions can
+          # read it from releases/latest/download/appcast.xml.
+          gh release upload "$GITHUB_REF_NAME" "$feed" --clobber
+          {
+            echo "### Update feed"
+            echo "appcast.xml is signed with the key the app pins and published: installed copies see Clipy $version."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
