@@ -146,21 +146,32 @@ extension ClipService {
 
     fileprivate func save(with data: CPYClipData, sourceApplication: NSRunningApplication? = nil) -> Bool {
         if !data.hasMeaningfulContent { return false }
-
-        let realm = try! Realm()
-        // Copy already copied history
-        let isCopySameHistory = AppEnvironment.current.defaults.bool(forKey: Constants.UserDefaults.copySameHistory)
-        if realm.object(ofType: CPYClip.self, forPrimaryKey: "\(data.hash)") != nil, !isCopySameHistory { return true }
-        // Don't save invalidated clip
-        if let clip = realm.object(ofType: CPYClip.self, forPrimaryKey: "\(data.hash)"), clip.isInvalidated { return true }
-
         // Don't save empty string history
         if data.isOnlyStringType && data.stringValue.isEmpty { return false }
 
-        // Overwrite same history
-        let isOverwriteHistory = AppEnvironment.current.defaults.bool(forKey: Constants.UserDefaults.overwriteSameHistory)
-        let savedHash = (isOverwriteHistory) ? data.hash : Int.random(in: 0..<1000000)
+        let realm = try! Realm()
+        // 内容指纹：以内容本身计算的稳定 hash 作为主键。相同内容必然得到相同主键，
+        // Realm 对主键建立唯一索引，查重为 O(1) 哈希查找，无需遍历历史，数据量再大也是常数时间。
+        let contentHash = "\(data.hash)"
 
+        // 已存在相同内容 → 去重，绝不产生重复条目
+        if let existing = realm.object(ofType: CPYClip.self, forPrimaryKey: contentHash), !existing.isInvalidated {
+            let isOverwriteHistory = AppEnvironment.current.defaults.bool(forKey: Constants.UserDefaults.overwriteSameHistory)
+            let isCopySameHistory = AppEnvironment.current.defaults.bool(forKey: Constants.UserDefaults.copySameHistory)
+            // 直接更新已存在的记录对象，isFavorite 等用户状态自然保留，不会被覆盖丢失
+            if isOverwriteHistory || isCopySameHistory {
+                realm.transaction {
+                    existing.updateTime = Int(Date().timeIntervalSince1970 * 1000)
+                    if isOverwriteHistory, let sourceApplication = sourceApplication {
+                        existing.sourceBundleIdentifier = sourceApplication.bundleIdentifier ?? ""
+                        existing.sourceAppName = sourceApplication.localizedName ?? ""
+                    }
+                }
+            }
+            return true
+        }
+
+        // 不存在相同内容 → 新建条目
         // Saved time and path
         let unixTime = Int(Date().timeIntervalSince1970 * 1000)
         let savedPath = CPYUtilities.applicationSupportFolder() + "/\(NSUUID().uuidString).data"
@@ -168,7 +179,7 @@ extension ClipService {
         let clip = CPYClip()
         clip.dataPath = savedPath
         clip.title = data.titleText[0...10000]
-        clip.dataHash = "\(savedHash)"
+        clip.dataHash = contentHash
         clip.updateTime = unixTime
         clip.primaryType = data.primaryType?.rawValue ?? ""
         if let sourceApplication = sourceApplication {

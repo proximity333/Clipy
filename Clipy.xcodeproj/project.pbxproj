@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		242EC2327861D35B7C3AE84E /* Pods_ClipyTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 00A4B450122D7FCE6BD57E77 /* Pods_ClipyTests.framework */; };
 		26F49E00CBA8EB8B4DB136A0 /* SearchTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C755B8B6D0F9A14523866B5 /* SearchTextField.swift */; };
+		2D1E3FC7C196A6D0490B1DF6 /* ClipServiceSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C0186C07C58CE8CBFBCD33 /* ClipServiceSpec.swift */; };
 		4AC2AA29EF2BAE48201EDE6D /* AppColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FB8F2F75F0C9B50D2B8689 /* AppColors.swift */; };
 		6E28861E792AA7F7A928DC48 /* CPYGeneralPreferenceViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92E0DC52351AB2C0724C9825 /* CPYGeneralPreferenceViewController.swift */; };
 		8572653B1F07748D4F540F1B /* SearchFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11735872FA43D5D5A13D2FE5 /* SearchFieldView.swift */; };
@@ -16,6 +17,7 @@
 		B6B867FC5DD1A0F733672C84 /* SearchPopoverController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 025C995DA040276D94900E9E /* SearchPopoverController.swift */; };
 		B7CC520B88EAA6AD38E93462 /* Pods_Clipy.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 73A92F6DEE6CFF50A567CFEF /* Pods_Clipy.framework */; };
 		C5F1B7331FF74A2D00D2DA83 /* NSPasteboard+Deprecated.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5F1B7321FF74A2D00D2DA83 /* NSPasteboard+Deprecated.swift */; };
+		D30B90A52B3FC9781E38A472 /* ClipDataSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBAF3215E6B12B282A60A6C /* ClipDataSpec.swift */; };
 		FA08EDF81D1FED7D000D1D13 /* HotKeyServiceSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA08EDF71D1FED7D000D1D13 /* HotKeyServiceSpec.swift */; };
 		FA0D5CE81DDCC61600AC9052 /* ClipService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0D5CE71DDCC61600AC9052 /* ClipService.swift */; };
 		FA10897D20EC22E200A3FEFC /* AssetsImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA10897B20EC22E200A3FEFC /* AssetsImages.swift */; };
@@ -45,7 +47,6 @@
 		FA1DB4E51DDCB49C007F95C8 /* CPYUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1DB4D91DDCB49C007F95C8 /* CPYUtilities.swift */; };
 		FA1DB4E71DDCB49C007F95C8 /* CPYDesignableButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1DB4DD1DDCB49C007F95C8 /* CPYDesignableButton.swift */; };
 		FA1DB4E81DDCB49C007F95C8 /* CPYDesignableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1DB4DE1DDCB49C007F95C8 /* CPYDesignableView.swift */; };
-		GLASS0000000000000002A2 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = GLASS0000000000000001A1 /* LiquidGlass.swift */; };
 		FA1DB4E91DDCB49C007F95C8 /* CPYSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1DB4E01DDCB49C007F95C8 /* CPYSplitView.swift */; };
 		FA1DB4EB1DDCB49C007F95C8 /* CPYPlaceHolderTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1DB4E41DDCB49C007F95C8 /* CPYPlaceHolderTextView.swift */; };
 		FA1DB5121DDCB4C0007F95C8 /* CPYPreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1DB4ED1DDCB4C0007F95C8 /* CPYPreferencesWindowController.swift */; };
@@ -76,6 +77,7 @@
 		FAC43E2B1B35DFDF00C06102 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAC43E2A1B35DFDF00C06102 /* WebKit.framework */; };
 		FAE911B91DE045E2008A4BEC /* HotKeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE911B81DE045E2008A4BEC /* HotKeyService.swift */; };
 		FAE911BB1DE054F1008A4BEC /* NSCoding+Archive.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE911BA1DE054F1008A4BEC /* NSCoding+Archive.swift */; };
+		GLASS0000000000000002A2 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = GLASS0000000000000001A1 /* LiquidGlass.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +105,7 @@
 
 /* Begin PBXFileReference section */
 		00A4B450122D7FCE6BD57E77 /* Pods_ClipyTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_ClipyTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		00C0186C07C58CE8CBFBCD33 /* ClipServiceSpec.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipServiceSpec.swift; sourceTree = "<group>"; };
 		025C995DA040276D94900E9E /* SearchPopoverController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchPopoverController.swift; sourceTree = "<group>"; };
 		11735872FA43D5D5A13D2FE5 /* SearchFieldView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchFieldView.swift; sourceTree = "<group>"; };
 		1C2D23FF23B07B76585DC610 /* Pods-ClipyTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ClipyTests.release.xcconfig"; path = "Pods/Target Support Files/Pods-ClipyTests/Pods-ClipyTests.release.xcconfig"; sourceTree = "<group>"; };
@@ -117,6 +120,7 @@
 		31ACA9F61EC5B85C00BD34C0 /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/CPYTypePreferenceViewController.strings; sourceTree = "<group>"; };
 		31ACA9F71EC5B85C00BD34C0 /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/CPYUpdatesPreferenceViewController.strings; sourceTree = "<group>"; };
 		31ACA9F91EC5B85C00BD34C0 /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/Localizable.strings; sourceTree = "<group>"; };
+		3DBAF3215E6B12B282A60A6C /* ClipDataSpec.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipDataSpec.swift; sourceTree = "<group>"; };
 		54ADE0FA2008F63F00239852 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/CPYPreferencesWindowController.strings"; sourceTree = "<group>"; };
 		54ADE0FC2008F64000239852 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/CPYExcludeAppPreferenceViewController.strings"; sourceTree = "<group>"; };
 		54ADE0FD2008F64000239852 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/CPYGeneralPreferenceViewController.strings"; sourceTree = "<group>"; };
@@ -172,7 +176,6 @@
 		FA1DB4D91DDCB49C007F95C8 /* CPYUtilities.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CPYUtilities.swift; sourceTree = "<group>"; };
 		FA1DB4DD1DDCB49C007F95C8 /* CPYDesignableButton.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CPYDesignableButton.swift; sourceTree = "<group>"; };
 		FA1DB4DE1DDCB49C007F95C8 /* CPYDesignableView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CPYDesignableView.swift; sourceTree = "<group>"; };
-		GLASS0000000000000001A1 /* LiquidGlass.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LiquidGlass.swift; sourceTree = "<group>"; };
 		FA1DB4E01DDCB49C007F95C8 /* CPYSplitView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CPYSplitView.swift; sourceTree = "<group>"; };
 		FA1DB4E41DDCB49C007F95C8 /* CPYPlaceHolderTextView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CPYPlaceHolderTextView.swift; sourceTree = "<group>"; };
 		FA1DB4ED1DDCB4C0007F95C8 /* CPYPreferencesWindowController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CPYPreferencesWindowController.swift; sourceTree = "<group>"; };
@@ -210,6 +213,7 @@
 		FAE911B81DE045E2008A4BEC /* HotKeyService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = HotKeyService.swift; sourceTree = "<group>"; };
 		FAE911BA1DE054F1008A4BEC /* NSCoding+Archive.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "NSCoding+Archive.swift"; sourceTree = "<group>"; };
 		FF7D6163FCA0BF4EB22D62C0 /* ThemeService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThemeService.swift; sourceTree = "<group>"; };
+		GLASS0000000000000001A1 /* LiquidGlass.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LiquidGlass.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -400,14 +404,6 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
-		GLASS0000000000000003A3 /* Glass */ = {
-			isa = PBXGroup;
-			children = (
-				GLASS0000000000000001A1 /* LiquidGlass.swift */,
-			);
-			path = Glass;
-			sourceTree = "<group>";
-		};
 		FA1DB4DC1DDCB49C007F95C8 /* DesignableView */ = {
 			isa = PBXGroup;
 			children = (
@@ -507,6 +503,8 @@
 			children = (
 				FA08EDF71D1FED7D000D1D13 /* HotKeyServiceSpec.swift */,
 				FAC43DDC1B35D8B100C06102 /* Supporting Files */,
+				00C0186C07C58CE8CBFBCD33 /* ClipServiceSpec.swift */,
+				3DBAF3215E6B12B282A60A6C /* ClipDataSpec.swift */,
 			);
 			path = ClipyTests;
 			sourceTree = "<group>";
@@ -517,6 +515,14 @@
 				FAC43DDD1B35D8B100C06102 /* Info.plist */,
 			);
 			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		GLASS0000000000000003A3 /* Glass */ = {
+			isa = PBXGroup;
+			children = (
+				GLASS0000000000000001A1 /* LiquidGlass.swift */,
+			);
+			path = Glass;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -773,20 +779,6 @@
 			shellPath = /bin/sh;
 			shellScript = "command -v swiftgen >/dev/null || { echo \"error: swiftgen not found, install it with 'brew install swiftgen'\"; exit 1; }; swiftgen";
 		};
-		FAAA88991E686CED0088FB34 /* BartyCrouch */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = BartyCrouch;
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "command -v bartycrouch >/dev/null || { echo \"error: bartycrouch not found, install it with 'brew install bartycrouch'\"; exit 1; }; bartycrouch update -p \"$PROJECT_DIR\"";
-		};
 		FA9B88991E686CED0088FC02 /* Thin Sparkle Helpers (arm64 only) */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -800,6 +792,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -e\nframework=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks/Sparkle.framework\"\n[ -d \"${framework}\" ] || exit 0\nlist=\"$(mktemp)\"\nfind \"${framework}\" -type f -perm +111 > \"${list}\"\nthinned=0\nwhile IFS= read -r binary; do\n  if lipo -info \"${binary}\" 2>/dev/null | grep -q x86_64; then\n    lipo \"${binary}\" -thin arm64 -output \"${binary}.arm64\"\n    mv -f \"${binary}.arm64\" \"${binary}\"\n    thinned=1\n  fi\ndone < \"${list}\"\nrm -f \"${list}\"\nif [ \"${thinned}\" = 1 ]; then\n  for nested in \\\n    \"${framework}/Versions/B/XPCServices/Downloader.xpc\" \\\n    \"${framework}/Versions/B/XPCServices/Installer.xpc\" \\\n    \"${framework}/Versions/B/Updater.app\"\n  do\n    if [ -d \"${nested}\" ]; then\n      codesign --force --sign - --options runtime --preserve-metadata=identifier,entitlements \"${nested}\"\n    fi\n  done\n  codesign --force --sign - --options runtime --preserve-metadata=identifier,entitlements \"${framework}\"\nfi\nif find \"${framework}\" -type f -perm +111 -exec lipo -info {} \\; 2>/dev/null | grep -q x86_64; then\n  echo \"error: an x86_64 slice is still present in ${framework}\"\n  exit 1\nfi\n";
+		};
+		FAAA88991E686CED0088FB34 /* BartyCrouch */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = BartyCrouch;
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "command -v bartycrouch >/dev/null || { echo \"error: bartycrouch not found, install it with 'brew install bartycrouch'\"; exit 1; }; bartycrouch update -p \"$PROJECT_DIR\"";
 		};
 		FAAD02201CA98E20007C6EEE /* SwiftLint */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -878,6 +884,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				FA08EDF81D1FED7D000D1D13 /* HotKeyServiceSpec.swift in Sources */,
+				2D1E3FC7C196A6D0490B1DF6 /* ClipServiceSpec.swift in Sources */,
+				D30B90A52B3FC9781E38A472 /* ClipDataSpec.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
